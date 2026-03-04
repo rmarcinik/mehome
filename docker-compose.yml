@@ -1,0 +1,153 @@
+---
+volumes:
+  tailscale:
+    driver: local
+
+configs:
+  caddyconfig:
+    content: |
+      (cloudflare) {
+        tls {
+          dns cloudflare ${CF_API_TOKEN}
+        }
+      }
+
+      jellyfin.home.${DOMAIN} {
+        reverse_proxy localhost:8096
+        import cloudflare
+      }
+      sonarr.home.${DOMAIN} {
+        reverse_proxy localhost:8989
+        import cloudflare
+      }
+      radarr.home.${DOMAIN} {
+        reverse_proxy localhost:7878
+        import cloudflare
+      }
+      sabnzbd.home.${DOMAIN} {
+        reverse_proxy localhost:8080
+        import cloudflare
+      }
+      prowlarr.home.${DOMAIN} {
+        reverse_proxy localhost:9696
+        import cloudflare
+      }
+
+services:
+  tailscale:
+    container_name: tailscale
+    image: tailscale/tailscale:latest
+    hostname: ${TS_HOSTNAME}
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
+    volumes:
+      - ./tailscale/state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - net_admin
+      - sys_module
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "tailscale", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  web-proxy:
+    container_name: web-proxy
+    image: slothcroissant/caddy-cloudflaredns:latest
+    network_mode: service:tailscale
+    depends_on:
+      tailscale:
+        condition: service_healthy
+    configs:
+      - source: caddyconfig
+        target: /etc/caddy/Caddyfile
+
+  sabnzbd:
+    container_name: sabnzbd
+    image: lscr.io/linuxserver/sabnzbd
+    network_mode: service:tailscale
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK_SET=022
+      - TZ=${TZ}
+    volumes:
+      - "./sabnzbd:/config"
+      - "./data/downloads:/downloads"
+    depends_on:
+      web-proxy:
+        condition: service_healthy
+
+  sonarr:
+    container_name: sonarr
+    image: lscr.io/linuxserver/sonarr
+    network_mode: service:tailscale
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK_SET=022
+      - TZ=${TZ}
+    volumes:
+      - "./sonarr:/config"
+      - "./data/downloads:/downloads"
+      - "./data/tv:/tv"
+      - "/etc/localtime:/etc/localtime:ro"
+    depends_on:
+      web-proxy:
+        condition: service_healthy
+
+  radarr:
+    container_name: radarr
+    image: lscr.io/linuxserver/radarr
+    network_mode: service:tailscale
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK_SET=022
+      - TZ=${TZ}
+    volumes:
+      - "./radarr:/config"
+      - "./data/downloads:/downloads"
+      - "./data/movies:/movies"
+      - "/etc/localtime:/etc/localtime:ro"
+    depends_on:
+      web-proxy:
+        condition: service_healthy
+
+  jellyfin:
+    container_name: jellyfin
+    image: lscr.io/linuxserver/jellyfin
+    network_mode: service:tailscale
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK_SET=022
+      - TZ=${TZ}
+    volumes:
+      - "./jellyfin:/config"
+      - "./data/movies:/movies"
+      - "./data/tv:/tv"
+    depends_on:
+      web-proxy:
+        condition: service_healthy
+
+  prowlarr:
+    container_name: prowlarr
+    image: lscr.io/linuxserver/prowlarr
+    network_mode: service:tailscale
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK_SET=022
+      - TZ=${TZ}
+    volumes:
+      - "./prowlarr:/config"
+    depends_on:
+      web-proxy:
+        condition: service_healthy
