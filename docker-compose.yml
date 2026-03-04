@@ -6,31 +6,37 @@ volumes:
 configs:
   caddyconfig:
     content: |
-      (cloudflare) {
+      *.home.${DOMAIN} {
         tls {
           dns cloudflare ${CF_API_TOKEN}
         }
-      }
 
-      jellyfin.home.${DOMAIN} {
-        reverse_proxy localhost:8096
-        import cloudflare
-      }
-      sonarr.home.${DOMAIN} {
-        reverse_proxy localhost:8989
-        import cloudflare
-      }
-      radarr.home.${DOMAIN} {
-        reverse_proxy localhost:7878
-        import cloudflare
-      }
-      sabnzbd.home.${DOMAIN} {
-        reverse_proxy localhost:8080
-        import cloudflare
-      }
-      prowlarr.home.${DOMAIN} {
-        reverse_proxy localhost:9696
-        import cloudflare
+        @jellyfin host jellyfin.home.${DOMAIN}
+        handle @jellyfin {
+          reverse_proxy localhost:8096
+        }
+
+        @sonarr host sonarr.home.${DOMAIN}
+        handle @sonarr {
+          reverse_proxy localhost:8989
+        }
+
+        @radarr host radarr.home.${DOMAIN}
+        handle @radarr {
+          reverse_proxy localhost:7878
+        }
+
+        @sabnzbd host sabnzbd.home.${DOMAIN}
+        handle @sabnzbd {
+          reverse_proxy localhost:8080 {
+            header_up Host localhost
+          }
+        }
+
+        @prowlarr host prowlarr.home.${DOMAIN}
+        handle @prowlarr {
+          reverse_proxy localhost:9696
+        }
       }
 
 services:
@@ -67,6 +73,12 @@ services:
     configs:
       - source: caddyconfig
         target: /etc/caddy/Caddyfile
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   sabnzbd:
     container_name: sabnzbd
